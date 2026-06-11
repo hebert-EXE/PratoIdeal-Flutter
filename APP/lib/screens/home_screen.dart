@@ -1,10 +1,42 @@
 import 'package:flutter/material.dart';
-import '../utils/app_colors.dart';
-import '../widgets/custom_drawer.dart';
-import 'restaurant_detail_screen.dart';
+import 'package:provider/provider.dart';
 
-import '../models/restaurant.dart';
-import '../services/api_service.dart';
+import '../models/place_models.dart';
+import '../providers/theme_provider.dart';
+import '../services/places_service.dart';
+import '../widgets/collections_section.dart';
+import '../widgets/custom_drawer.dart';
+import '../widgets/promo_banner.dart';
+import '../widgets/restaurant_carousel.dart';
+import '../widgets/ui/ui.dart';
+import 'restaurant_detail_screen.dart';
+import 'search_results_screen.dart';
+import 'search_screen.dart';
+
+/// Categoria de carrossel: rótulo, subtítulo e query enviada ao Places.
+class _Cat {
+  final String title;
+  final String subtitle;
+  final String query;
+  final bool openNow;
+  const _Cat(this.title, this.subtitle, this.query, {this.openNow = false});
+}
+
+const _location = 'São Paulo';
+
+const _categories = <_Cat>[
+  _Cat('Abertos Agora & Bem Avaliados', 'Os melhores locais abertos neste momento.',
+      'Melhores bem avaliados', openNow: true),
+  _Cat('Mais Populares na Região', 'Os queridinhos da galera.', 'Melhores restaurantes'),
+  _Cat('Churrascarias e Carnes', 'Para os apaixonados por um bom corte.', 'Churrascaria e Carnes'),
+  _Cat('Hambúrgueres Incríveis', 'Para matar a fome de um bom artesanal.', 'Hambúrguer'),
+  _Cat('Culinária Italiana', 'Massas frescas e o sabor da Itália.', 'Restaurante Italiano'),
+  _Cat('Noite da Pizza', 'Clássicas, diferentonas e deliciosas.', 'Pizzaria'),
+  _Cat('Festival Japonês', 'Sushis frescos e comida oriental.', 'Japonês'),
+  _Cat('Frutos do Mar e Peixes', 'Direto do litoral.', 'Frutos do mar'),
+  _Cat('Cafeterias e Docerias', 'Café da tarde e sobremesas.', 'Cafeteria e Doceria'),
+  _Cat('Opções Saudáveis', 'Saladas, bowls e refeições leves.', 'Saudável'),
+];
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,318 +46,178 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _apiService = ApiService();
-  List<Restaurant> _restaurants = [];
-  List<String> _categories = [];
-  String _selectedCategory = 'Ver Todos';
-  String _searchQuery = '';
-  bool _isLoading = true;
+  final _places = PlacesService();
+
+  Map<int, List<RestaurantCard>> _byCategory = {};
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    _load();
   }
 
-  Future<void> _loadInitialData() async {
-    try {
-      final restaurants = await _apiService.getRestaurants();
-      final categories = await _apiService.getRestaurantCategories();
-      setState(() {
-        _restaurants = restaurants;
-        _categories = categories;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      // Handle error
-    }
-  }
-
-  Future<void> _onCategorySelected(String category) async {
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final results = await Future.wait(
+      _categories.map((c) => _places
+          .searchText(_location, query: '${c.query} em $_location', openNow: c.openNow)
+          .then((p) => p.restaurants)
+          .catchError((_) => <RestaurantCard>[])),
+    );
+    if (!mounted) return;
     setState(() {
-      _selectedCategory = category;
-      _isLoading = true;
+      _byCategory = {for (var i = 0; i < results.length; i++) i: results[i]};
+      _loading = false;
     });
+  }
 
-    try {
-      if (category == 'Ver Todos') {
-        final restaurants = await _apiService.getRestaurants();
-        setState(() {
-          _restaurants = restaurants;
-          _isLoading = false;
-        });
-      } else {
-        final restaurants = await _apiService.getRestaurantsByCategory(
-          category,
-        );
-        setState(() {
-          _restaurants = restaurants;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() => _isLoading = false);
-      // Handle error
-    }
+  void _openDetail(RestaurantCard r) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RestaurantDetailScreen(restaurantId: r.id),
+      ),
+    );
+  }
+
+  void _openSearch(String query, String title) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SearchResultsScreen(
+          title: title,
+          query: query,
+          locationName: _location,
+        ),
+      ),
+    );
+  }
+
+  void _openOmnibox() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const SearchScreen(locationName: _location),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredRestaurants = _restaurants.where((r) {
-      if (_searchQuery.isEmpty) return true;
-      return r.name.toLowerCase().contains(_searchQuery.toLowerCase());
-    }).toList();
-
-    final bestRatedRestaurants = List<Restaurant>.from(filteredRestaurants)
-      ..sort((a, b) => b.rating.compareTo(a.rating));
+    final theme = Theme.of(context);
+    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Prato Ideal',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.restaurant_menu, color: Colors.white),
-          ],
-        ),
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
       drawer: const CustomDrawer(),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Hero Section
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              color: AppColors.primary,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      appBar: AppBar(
+        title: const BrandWordmark(fontSize: 20),
+        actions: [
+          IconButton(
+            tooltip: 'Buscar',
+            icon: const Icon(Icons.search),
+            onPressed: _openOmnibox,
+          ),
+          IconButton(
+            tooltip: 'Alternar tema',
+            icon: Icon(themeProvider.isDark(context)
+                ? Icons.light_mode_outlined
+                : Icons.dark_mode_outlined),
+            onPressed: () => context.read<ThemeProvider>().toggle(context),
+          ),
+        ],
+      ),
+      body: _loading
+          ? const AppLoading()
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 32),
                 children: [
-                  const Text(
-                    'Descubra, avalie e\ncompartilhe\nexperiências\ngastronômicas',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'Busque por nome de restaurante...',
-                      filled: true,
-                      fillColor: Colors.white,
-                      suffixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                        borderSide: BorderSide.none,
+                  _hero(theme),
+                  _searchField(),
+                  CollectionsSection(onSelectQuery: _openSearch),
+                  for (var i = 0; i < _categories.length; i++)
+                    if ((_byCategory[i] ?? const []).isNotEmpty) ...[
+                      RestaurantCarousel(
+                        title: _categories[i].title,
+                        subtitle: _categories[i].subtitle,
+                        restaurants: _byCategory[i]!,
+                        onTapRestaurant: _openDetail,
+                      ),
+                      if (i == 1) const PromoBanner(),
+                    ],
+                  if (_byCategory.values.every((l) => l.isEmpty))
+                    const Padding(
+                      padding: EdgeInsets.only(top: 40),
+                      child: EmptyState(
+                        icon: Icons.restaurant,
+                        title: 'Nenhum restaurante encontrado',
+                        description: 'Tente novamente mais tarde.',
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
-
-            // Categories Filter
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: SizedBox(
-                height: 40,
-                child: _isLoading && _restaurants.isEmpty && _categories.isEmpty
-                    ? const Center(child: CircularProgressIndicator())
-                    : ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _buildCategoryChip(
-                            'Ver Todos',
-                            isSelected: _selectedCategory == 'Ver Todos',
-                            onTap: () => _onCategorySelected('Ver Todos'),
-                          ),
-                          ..._categories.map(
-                            (category) => _buildCategoryChip(
-                              category,
-                              isSelected: _selectedCategory == category,
-                              onTap: () => _onCategorySelected(category),
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-
-            // Melhores Avaliados Section
-            _buildSectionHeader('Melhores Avaliados'),
-            SizedBox(
-              height: 280,
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: bestRatedRestaurants.length,
-                      itemBuilder: (context, index) {
-                        final restaurant = bestRatedRestaurants[index];
-                        return _buildRestaurantCard(context, restaurant);
-                      },
-                    ),
-            ),
-
-            // Ótimos Preços Section
-            _buildSectionHeader('Ótimos Preços'),
-            SizedBox(
-              height: 280,
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: filteredRestaurants.length,
-                      itemBuilder: (context, index) {
-                        final restaurant = filteredRestaurants[index];
-                        return _buildRestaurantCard(context, restaurant);
-                      },
-                    ),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
     );
   }
 
-  Widget _buildCategoryChip(
-    String label, {
-    bool isSelected = false,
-    VoidCallback? onTap,
-  }) {
+  Widget _hero(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.only(right: 8.0),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Chip(
-          label: Text(
-            label,
-            style: TextStyle(color: isSelected ? Colors.white : Colors.black),
-          ),
-          backgroundColor: isSelected ? AppColors.primary : Colors.grey[200],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(text: 'Descubra os melhores sabores em '),
+                TextSpan(
+                  text: _location,
+                  style: TextStyle(color: theme.colorScheme.primary),
+                ),
+              ],
+            ),
+            style: theme.textTheme.displaySmall,
           ),
-          const Icon(Icons.chevron_right),
+          const SizedBox(height: 8),
+          Text(
+            'Explore restaurantes bem avaliados, de lanches rápidos a jantares sofisticados.',
+            style: theme.textTheme.bodyLarge
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildRestaurantCard(BuildContext context, Restaurant restaurant) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                RestaurantDetailScreen(restaurantId: restaurant.id),
-          ),
-        );
-      },
-      child: Container(
-        width: 250,
-        margin: const EdgeInsets.only(right: 16, bottom: 8),
-        child: Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
-                ),
-                child: Image.network(
-                  restaurant.imageUrl,
-                  height: 150,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 150,
-                    color: Colors.grey,
-                    child: const Center(child: Icon(Icons.broken_image)),
+  Widget _searchField() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _openOmnibox,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              children: [
+                Icon(Icons.search, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Pesquise por restaurante ou prato...',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      restaurant.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(Icons.star, color: Colors.amber, size: 16),
-                        const SizedBox(width: 4),
-                        Text(restaurant.rating.toString()),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '• ${restaurant.category}',
-                            style: const TextStyle(color: Colors.grey),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      restaurant.address.toString(),
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

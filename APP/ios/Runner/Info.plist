@@ -45,5 +45,18 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>O Prato Ideal usa sua localização para mostrar restaurantes próximos a você.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.279716417545-mb6da911c35be90l6grp2s9pl2scn4h8</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

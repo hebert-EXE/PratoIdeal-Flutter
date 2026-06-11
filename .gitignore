@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Clients OAuth (credenciais de ambiente — não versionar)
+client_*.apps.googleusercontent.com.plist
+GoogleService-Info.plist
+google-services.json
+
+# Projeto web de referência (não faz parte do app mobile)
+webappexemple/
+
+# Documentação interna / ferramentas (não versionar)
+PLANO_MIGRACAO.md
+.claude/
